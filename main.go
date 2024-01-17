@@ -106,7 +106,7 @@ func extractID(s string) (int, error) {
 	return number, nil
 }
 
-func getPeersToConnect(N, M int) []int {
+func getPeersToConnect(N int) []int {
 	numbers := make([]int, N)
 	for i := 0; i < N; i++ {
 		numbers[i] = i
@@ -116,20 +116,17 @@ func getPeersToConnect(N, M int) []int {
 		numbers[i], numbers[j] = numbers[j], numbers[i]
 	})
 
-	if M < N {
-		return numbers[:M]
-	}
-
 	return numbers
 }
 
-func resolveAddress(addr string) ([]byte, error) {
+func resolveAddress(addr string) (net.IP, error) {
 	ips, err := net.LookupIP(addr)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
-	return ips[0], err
+	ipAddr := ips[0]
+	return ipAddr, nil
 }
 
 func readIDsFile() map[string]interface{} {
@@ -160,8 +157,8 @@ func readLoop(sub *pubsub.Subscription, ctx context.Context) {
 		receivedTime := time.Unix(0, int64(receivedTimestamp))
 		currentTimestamp := time.Now().UnixNano()
 		currentTime := time.Unix(0, currentTimestamp)
-		timeDifference := currentTime.Sub(receivedTime)
-		fmt.Printf("%s, milliseconds: %s", receivedTime, timeDifference)
+		timeDifference := currentTime.Sub(receivedTime).Milliseconds()
+		fmt.Printf("%s, milliseconds: %d\n", receivedTime, timeDifference)
 	}
 }
 
@@ -225,18 +222,25 @@ func main() {
 	println("Waiting 30 seconds for node building...")
 	time.Sleep(time.Second * 30)
 
-	peersToConnect := getPeersToConnect(PEERS, CONNECTTO)
+	peersToConnect := getPeersToConnect(PEERS)
 
+	connections := 0
 	for i := 0; i < len(peersToConnect); i++ {
+		if connections >= CONNECTTO {
+			break
+		}
+		if peersToConnect[i] == id {
+			continue
+		}
 		fmt.Printf("Will connect to peer %d\n", peersToConnect[i])
 		fmt.Printf("Service: %d\n", peersToConnect[i])
 
-		iString := strconv.Itoa(i)
-		tAddress := fmt.Sprintf("pod-%d:5000", peersToConnect[i])
+		iString := strconv.Itoa(peersToConnect[i])
+		tAddress := fmt.Sprintf("pod-%d", peersToConnect[i])
 
 		fmt.Printf("Trying to resolve %s\n", tAddress)
 
-		var ipArray []byte
+		var ipString string
 		for {
 			ip, err := resolveAddress(tAddress)
 			if err != nil {
@@ -244,17 +248,23 @@ func main() {
 				println("Waiting 15 seconds...")
 				time.Sleep(time.Second * 15)
 			} else {
-				fmt.Printf("%s resolved: %s\n", tAddress, net.IP(ip).String())
-				ipArray = ip
+				println("Resolved!")
+				fmt.Printf("%s resolved: %s\n", tAddress, ip.String())
+				ipString = ip.String()
 				break
 			}
 		}
 
 		for {
-			fmt.Printf("Trying to connect to %s\n", net.IP(ipArray).String())
+			fmt.Printf("Trying to connect to %s\n", ipString)
 			nodeIDString := p2pIDs["pod-"+iString]
 			nodeID, _ := peer.Decode(nodeIDString.(string))
-			multiAddrs, _ := ma.NewMultiaddr("ip4/" + net.IP(ipArray).String() + "/tcp/5000")
+			mAddrs := "/ip4/" + ipString + "/tcp/5000"
+			fmt.Printf("Creating multiaddres from %s\n", mAddrs)
+			multiAddrs, mErr := ma.NewMultiaddr(mAddrs)
+			if mErr != nil {
+				fmt.Printf("Failed to create multiaddress, %s\n", err)
+			}
 			multiaddrsArray := []ma.Multiaddr{multiAddrs}
 
 			info := peer.AddrInfo{
@@ -268,10 +278,14 @@ func main() {
 				time.Sleep(time.Second * 15)
 			} else {
 				println("Conected!")
+				connections += 1
 				break
 			}
 		}
 	}
+
+	println("Waiting 30 seconds for node connections...")
+	time.Sleep(time.Second * 30)
 
 	peers := ps.ListPeers("test")
 	fmt.Printf("Mesh size: %d\n", len(peers))
@@ -281,8 +295,7 @@ func main() {
 	for {
 		time.Sleep(time.Duration(MSGRATE) * time.Millisecond)
 		if counter%PEERS == id {
-			now := int64(time.Now().UnixNano())
-			fmt.Printf("Sending message at: %d\n", now)
+			now := time.Now().UnixNano()
 
 			nowBytes := make([]byte, 8)
 			binary.LittleEndian.PutUint64(nowBytes, uint64(now))
@@ -295,5 +308,6 @@ func main() {
 				fmt.Printf("Sent message at: %d\n", now)
 			}
 		}
+		counter += 1
 	}
 }
