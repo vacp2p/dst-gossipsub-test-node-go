@@ -130,7 +130,7 @@ func resolveAddress(addr string) (net.IP, error) {
 }
 
 func readIDsFile() map[string]interface{} {
-	fileContent, err := os.ReadFile("ids.json")
+	fileContent, err := os.ReadFile("/node/ids.json")
 	if err != nil {
 		fmt.Println("Error reading the JSON file:", err)
 		return nil
