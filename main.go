@@ -195,7 +195,7 @@ func main() {
 	}
 	fmt.Printf("Hostname: %s, ID: %s\n", hostname, h.ID())
 
-	ps, err := pubsub.NewGossipSub(ctx, h, pubsub.WithGossipSubParams(gsParams))
+	ps, err := pubsub.NewGossipSub(ctx, h, pubsub.WithGossipSubParams(gsParams), pubsub.WithFloodPublish(true))
 	if err != nil {
 		println("Error starting pubsub protocol", err)
 		panic(err)
